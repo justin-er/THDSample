@@ -1,0 +1,30 @@
+menu "DHT Reader"
+
+    choice DHT_SENSOR_TYPE
+        prompt "Select DHT Sensor Type"
+        default DHT_TYPE_AM2301
+        help
+            Select the type of DHT sensor being used.
+
+        config DHT_TYPE_DHT11
+            bool "DHT11"
+        config DHT_TYPE_AM2301
+            bool "DHT21/DHT22/AM2301/AM2302/AM2321"
+        config ITEAD_SI7021
+            bool "Itead Si7021"
+    endchoice
+
+
+    config DHT_DATA_GPIO
+        int "DHT Data GPIO Pin"
+        default 4
+        help
+            GPIO pin number where DHT data line is connected.
+
+    config DHT_INTERNAL_PULLUP
+        bool "Enable Internal Pullup"
+        default false
+        help
+            Enable internal pull-up resistor for DHT data line.
+
+endmenu

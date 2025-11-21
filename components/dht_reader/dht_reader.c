@@ -6,9 +6,19 @@
 #include <dht.h>
 
 #include "dht_reader.h"
+#include "sdkconfig.h"
 
-#define SENSOR_TYPE DHT_TYPE_AM2301
-#define CONFIG_EXAMPLE_DATA_GPIO 4
+#ifdef CONFIG_DHT_TYPE_AM2301
+    #define SENSOR_TYPE DHT_TYPE_AM2301
+#elif CONFIG_DHT_TYPE_DHT11
+    #define SENSOR_TYPE DHT_TYPE_DHT11
+#elif ITEAD_SI7021
+    #define SENSOR_TYPE DHT_TYPE_SI7021
+#else
+    #define SENSOR_TYPE DHT_TYPE_AM2301
+#endif
+
+#define CONFIG_EXAMPLE_DATA_GPIO CONFIG_DHT_DATA_GPIO
 
 static QueueHandle_t dht_queue = NULL;
 
@@ -46,7 +56,7 @@ void dht_task(void *pvParameters)
 
 QueueHandle_t dht_init(void)
 {
-#ifdef CONFIG_EXAMPLE_INTERNAL_PULLUP
+#ifdef CONFIG_DHT_INTERNAL_PULLUP
     gpio_set_pull_mode(CONFIG_EXAMPLE_DATA_GPIO, GPIO_PULLUP_ONLY);
 #endif
     
