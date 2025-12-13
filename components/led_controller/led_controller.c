@@ -33,7 +33,7 @@ static void blink_task_gpio(void *pvParameters);
 static void cleanup_resources(void);
 
 static bool is_strip_mode(void)
-{
+    {
     return (led_strip != NULL);
 }
 
@@ -97,7 +97,7 @@ esp_err_t led_controller_init_gpio(gpio_num_t gpio)
 {
     // Validate GPIO number
     if (gpio < GPIO_NUM_0 || gpio >= GPIO_NUM_MAX)
-    {
+{
         ESP_LOGE(TAG, "Invalid GPIO number: %d", gpio);
         return ESP_ERR_INVALID_ARG;
     }
@@ -191,10 +191,10 @@ esp_err_t led_controller_init_strip(gpio_num_t gpio, uint32_t leds, led_controll
     esp_err_t ret;
     if (backend == LED_CONTROLLER_BACKEND_RMT)
     {
-        led_strip_rmt_config_t rmt_config = {
-            .resolution_hz = 10 * 1000 * 1000, // 10MHz
-            .flags.with_dma = false,
-        };
+    led_strip_rmt_config_t rmt_config = {
+        .resolution_hz = 10 * 1000 * 1000, // 10MHz
+        .flags.with_dma = false,
+    };
         ret = led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip);
         if (ret != ESP_OK)
         {
@@ -206,10 +206,10 @@ esp_err_t led_controller_init_strip(gpio_num_t gpio, uint32_t leds, led_controll
     }
     else // SPI
     {
-        led_strip_spi_config_t spi_config = {
-            .spi_bus = SPI2_HOST,
-            .flags.with_dma = true,
-        };
+    led_strip_spi_config_t spi_config = {
+        .spi_bus = SPI2_HOST,
+        .flags.with_dma = true,
+    };
         ret = led_strip_new_spi_device(&strip_config, &spi_config, &led_strip);
         if (ret != ESP_OK)
         {
@@ -244,7 +244,7 @@ void led_controller_set_color(led_controller_color_t color)
     if (is_strip_mode())
     {
         set_led_strip_color(color);
-    }
+}
     else
     {
         // For GPIO mode, use red component to determine on/off
@@ -291,7 +291,7 @@ void led_controller_clear(void)
     if (blink_active)
     {
         led_controller_stop_blink();
-    }
+}
 
     if (is_strip_mode())
     {
@@ -306,7 +306,7 @@ void led_controller_clear(void)
 void led_controller_start_blink(uint32_t period, led_controller_color_t color)
 {
     if (!initialized)
-    {
+{
         ESP_LOGE(TAG, "LED controller not initialized. Call led_controller_init_gpio() or led_controller_init_strip() first.");
         return;
     }
@@ -343,7 +343,7 @@ void led_controller_start_blink(uint32_t period, led_controller_color_t color)
         ESP_LOGE(TAG, "Failed to create blink task");
         blink_active = false;
         blink_task_handle = NULL;
-    }
+}
     else
     {
         ESP_LOGI(TAG, "Started blinking with period %lu ms", period);
