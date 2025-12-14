@@ -1,3 +1,3 @@
 idf_component_register(SRCS "main.c"
                     INCLUDE_DIRS "."
-                    REQUIRES sample_interactor led_controller)
+                    REQUIRES humidity_indicator led_controller)

@@ -1,4 +1,4 @@
-idf_component_register(SRCS "sample_interactor.c"
+idf_component_register(SRCS "humidity_indicator.c"
                     INCLUDE_DIRS "include"
                     REQUIRES dht_reader led_controller)
 

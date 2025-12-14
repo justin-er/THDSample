@@ -6,8 +6,8 @@ cmake_minimum_required(VERSION 3.5)
 
 # Add subdirectories in components/ that contain components
 set(EXTRA_COMPONENT_DIRS 
-    ${CMAKE_CURRENT_LIST_DIR}/components/interactors
-    ${CMAKE_CURRENT_LIST_DIR}/components/services
+    ${CMAKE_CURRENT_LIST_DIR}/components/libs
+    ${CMAKE_CURRENT_LIST_DIR}/components/app
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

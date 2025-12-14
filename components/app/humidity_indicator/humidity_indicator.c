@@ -4,22 +4,23 @@
 #include <freertos/queue.h>
 #include "esp_log.h"
 
-#include "sample_interactor.h"
+#include "humidity_indicator.h"
 #include "dht_reader.h"
 #include "led_controller.h"
 
-static const char *TAG = "sample_interactor";
+static const char *TAG = "humidity_indicator";
 
 // Colors at 50% intensity
 static const led_controller_color_t COLOR_GREEN = {0, 32, 0};
+static const led_controller_color_t COLOR_ORANGE = {32, 16, 0};
 static const led_controller_color_t COLOR_RED = {32, 0, 0};
 
-static void sample_interactor_task(void *pvParameters)
+static void humidity_indicator_task(void *pvParameters)
 {
     QueueHandle_t dht_queue = (QueueHandle_t)pvParameters;
     dht_data_t dht_data;
 
-    ESP_LOGI(TAG, "Interactor task started");
+    ESP_LOGI(TAG, "Humidity indicator task started");
 
     while (1)
     {
@@ -33,6 +34,10 @@ static void sample_interactor_task(void *pvParameters)
             {
                 led_controller_set_color(COLOR_GREEN);
             }
+            else if (dht_data.humidity < 55.0f)
+            {
+                led_controller_set_color(COLOR_ORANGE);
+            }
             else
             {
                 led_controller_set_color(COLOR_RED);
@@ -41,9 +46,9 @@ static void sample_interactor_task(void *pvParameters)
     }
 }
 
-esp_err_t sample_interactor_start(void)
+esp_err_t humidity_indicator_start(void)
 {
-    ESP_LOGI(TAG, "Starting sample interactor...");
+    ESP_LOGI(TAG, "Starting humidity indicator...");
 
     // Initialize DHT reader and get queue handle
     QueueHandle_t dht_queue = dht_init();
@@ -53,10 +58,10 @@ esp_err_t sample_interactor_start(void)
         return ESP_FAIL;
     }
 
-    // Create the interactor task that processes sensor data
+    // Create the task that processes sensor data and indicates humidity
     BaseType_t task_created = xTaskCreate(
-        sample_interactor_task,
-        "sample_interactor",
+        humidity_indicator_task,
+        "humidity_indicator",
         4096,
         (void *)dht_queue,
         5,
@@ -65,11 +70,11 @@ esp_err_t sample_interactor_start(void)
 
     if (task_created != pdPASS)
     {
-        ESP_LOGE(TAG, "Failed to create sample interactor task");
+        ESP_LOGE(TAG, "Failed to create humidity indicator task");
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Sample interactor started successfully");
+    ESP_LOGI(TAG, "Humidity indicator started successfully");
     return ESP_OK;
 }
 

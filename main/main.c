@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "led_controller.h"
-#include "sample_interactor.h"
+#include "humidity_indicator.h"
 
 static const char *TAG = "main";
 
@@ -15,10 +15,10 @@ void app_main(void)
         return;
     }
 
-    // Start interactors
-    ret = sample_interactor_start();
+    // Start application components
+    ret = humidity_indicator_start();
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to start sample interactor: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to start humidity indicator: %s", esp_err_to_name(ret));
     }
 }

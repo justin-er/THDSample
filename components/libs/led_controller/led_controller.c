@@ -30,7 +30,6 @@ led_controller_color_t led_controller_blue = {0, 0, 255};
 // Static function declarations
 static void blink_task_strip(void *pvParameters);
 static void blink_task_gpio(void *pvParameters);
-static void cleanup_resources(void);
 
 static bool is_strip_mode(void)
     {
@@ -62,8 +61,13 @@ static void set_gpio_level(uint8_t level)
     }
 }
 
-static void cleanup_resources(void)
+void led_controller_deinit(void)
 {
+    if (!initialized)
+    {
+        return;
+    }
+
     // Stop blinking if active
     if (blink_active)
     {
@@ -91,6 +95,7 @@ static void cleanup_resources(void)
 
     num_leds = 0;
     initialized = false;
+    ESP_LOGI(TAG, "LED controller deinitialized");
 }
 
 esp_err_t led_controller_init_gpio(gpio_num_t gpio)

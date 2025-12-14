@@ -21,6 +21,14 @@ esp_err_t led_controller_init_gpio(gpio_num_t gpio_num);
 esp_err_t led_controller_init_strip(gpio_num_t gpio_num, uint32_t num_leds, led_controller_backend_t backend);
 
 /**
+ * @brief Deinitialize the LED controller
+ * 
+ * Stops any active blinking, releases hardware resources, and resets state.
+ * Safe to call even if not initialized.
+ */
+void led_controller_deinit(void);
+
+/**
  * @brief Turn LED on (simple on/off control)
  * 
  * For GPIO mode: Sets GPIO to HIGH (turns LED on)
