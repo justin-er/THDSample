@@ -10,6 +10,10 @@
 
 static const char *TAG = "sample_interactor";
 
+// Colors at 50% intensity
+static const led_controller_color_t COLOR_GREEN = {0, 32, 0};
+static const led_controller_color_t COLOR_RED = {32, 0, 0};
+
 static void sample_interactor_task(void *pvParameters)
 {
     QueueHandle_t dht_queue = (QueueHandle_t)pvParameters;
@@ -23,6 +27,16 @@ static void sample_interactor_task(void *pvParameters)
         if (xQueueReceive(dht_queue, &dht_data, portMAX_DELAY))
         {
             printf("Humidity: %.1f%% Temp: %.1fC\n", dht_data.humidity, dht_data.temperature);
+
+            // Update LED color based on humidity
+            if (dht_data.humidity < 50.0f)
+            {
+                led_controller_set_color(COLOR_GREEN);
+            }
+            else
+            {
+                led_controller_set_color(COLOR_RED);
+            }
         }
     }
 }
@@ -30,18 +44,6 @@ static void sample_interactor_task(void *pvParameters)
 esp_err_t sample_interactor_start(void)
 {
     ESP_LOGI(TAG, "Starting sample interactor...");
-
-    // Initialize LED controller for strip mode with RMT backend
-    esp_err_t ret = led_controller_init_strip(GPIO_NUM_48, 1, LED_CONTROLLER_BACKEND_RMT);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to initialize LED controller: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // Start LED blinking
-    led_controller_color_t light_white = {2, 2, 2};
-    led_controller_start_blink(2000, light_white);
 
     // Initialize DHT reader and get queue handle
     QueueHandle_t dht_queue = dht_init();

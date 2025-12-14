@@ -95,18 +95,18 @@ static void cleanup_resources(void)
 
 esp_err_t led_controller_init_gpio(gpio_num_t gpio)
 {
-    // Validate GPIO number
-    if (gpio < GPIO_NUM_0 || gpio >= GPIO_NUM_MAX)
-{
-        ESP_LOGE(TAG, "Invalid GPIO number: %d", gpio);
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Clean up if already initialized
+    // If already initialized, just return success (singleton pattern)
     if (initialized)
     {
-        ESP_LOGW(TAG, "Re-initializing LED controller (GPIO mode)");
-        cleanup_resources();
+        ESP_LOGD(TAG, "LED controller already initialized, skipping");
+        return ESP_OK;
+    }
+
+    // Validate GPIO number
+    if (gpio < GPIO_NUM_0 || gpio >= GPIO_NUM_MAX)
+    {
+        ESP_LOGE(TAG, "Invalid GPIO number: %d", gpio);
+        return ESP_ERR_INVALID_ARG;
     }
 
     ESP_LOGI(TAG, "Initializing GPIO LED on GPIO %d", gpio);
@@ -137,6 +137,13 @@ esp_err_t led_controller_init_gpio(gpio_num_t gpio)
 
 esp_err_t led_controller_init_strip(gpio_num_t gpio, uint32_t leds, led_controller_backend_t back)
 {
+    // If already initialized, just return success (singleton pattern)
+    if (initialized)
+    {
+        ESP_LOGD(TAG, "LED controller already initialized, skipping");
+        return ESP_OK;
+    }
+
     // Validate GPIO number
     if (gpio < GPIO_NUM_0 || gpio >= GPIO_NUM_MAX)
     {
@@ -168,13 +175,6 @@ esp_err_t led_controller_init_strip(gpio_num_t gpio, uint32_t leds, led_controll
         return ESP_ERR_NOT_SUPPORTED;
     }
     #endif
-
-    // Clean up if already initialized
-    if (initialized)
-    {
-        ESP_LOGW(TAG, "Re-initializing LED controller (LED strip mode)");
-        cleanup_resources();
-    }
 
     ESP_LOGI(TAG, "Initializing LED strip: GPIO %d, %lu LEDs, backend %s", 
              gpio, leds, (back == LED_CONTROLLER_BACKEND_RMT) ? "RMT" : "SPI");
