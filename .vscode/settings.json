@@ -1,28 +1,28 @@
 {
   "C_Cpp.intelliSenseEngine": "Tag Parser",
-  "idf.espIdfPath": "/Users/a6442/esp/v6.0/esp-idf",
-  "idf.pythonInstallPath": "/opt/homebrew/bin/python3",
+  "idf.espIdfPath": "${env:HOME}/esp/v6.0/esp-idf",
+  "idf.pythonInstallPath": "/usr/local/bin/python3",
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.port": "/dev/tty.usbmodem2101",
-  "idf.toolsPath": "/Users/a6442/.espressif",
+  "idf.port": "/dev/tty.usbmodem1101",
+  "idf.toolsPath": "${env:HOME}",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
   },
-  "clangd.path": "/Users/amirrezaeghtedari/Documents/Technical/Espressif/esp/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
+  "clangd.path": "${env:HOME}/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
   "clangd.arguments": [
     "--background-index",
-    "--query-driver=/Users/amirrezaeghtedari/Documents/Technical/Espressif/esp/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc",
+    "--query-driver=${env:HOME}/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc",
     "--compile-commands-dir=${workspaceFolder}/build"
-],
-"idf.flashType": "JTAG",
-"files.associations": {
+  ],
+  "idf.flashType": "JTAG",
+  "files.associations": {
     "array": "c",
     "string": "c",
     "string_view": "c",
     "span": "c",
     "esp_log.h": "c",
     "cstdlib": "c"
-}
+  }
 }
