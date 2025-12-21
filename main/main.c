@@ -1,7 +1,7 @@
-#include <stdio.h>
 #include "esp_log.h"
 #include "led_controller.h"
 #include "humidity_indicator.h"
+#include "app_wifi.h"
 
 static const char *TAG = "main";
 
@@ -14,6 +14,9 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to initialize LED controller: %s", esp_err_to_name(ret));
         return;
     }
+
+    // Start WiFi Access Point
+    wifi_app_start();
 
     // Start application components
     ret = humidity_indicator_start();

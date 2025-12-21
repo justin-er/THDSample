@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
@@ -26,9 +25,13 @@ static esp_err_t simple_dht_read(gpio_num_t pin, float *humidity, float *tempera
     gpio_set_level(pin, 0);
     vTaskDelay(pdMS_TO_TICKS(20));
     gpio_set_level(pin, 1);
+    esp_rom_delay_us(30); // Wait 30us before switching to input
     
     // Switch to input and wait for response
     gpio_set_direction(pin, GPIO_MODE_INPUT);
+    
+    // Disable interrupts during critical timing section to prevent WiFi interference
+    portDISABLE_INTERRUPTS();
     
     // Wait for DHT to pull low (response signal)
     int timeout = 100;
@@ -36,7 +39,10 @@ static esp_err_t simple_dht_read(gpio_num_t pin, float *humidity, float *tempera
         esp_rom_delay_us(1);
         timeout--;
     }
-    if (timeout == 0) return ESP_ERR_TIMEOUT;
+    if (timeout == 0) {
+        portENABLE_INTERRUPTS();
+        return ESP_ERR_TIMEOUT;
+    }
     
     // Wait for DHT to release (go high)
     timeout = 100;
@@ -44,7 +50,10 @@ static esp_err_t simple_dht_read(gpio_num_t pin, float *humidity, float *tempera
         esp_rom_delay_us(1);
         timeout--;
     }
-    if (timeout == 0) return ESP_ERR_TIMEOUT;
+    if (timeout == 0) {
+        portENABLE_INTERRUPTS();
+        return ESP_ERR_TIMEOUT;
+    }
     
     // Wait for DHT to pull low again (start of data)
     timeout = 100;
@@ -52,7 +61,10 @@ static esp_err_t simple_dht_read(gpio_num_t pin, float *humidity, float *tempera
         esp_rom_delay_us(1);
         timeout--;
     }
-    if (timeout == 0) return ESP_ERR_TIMEOUT;
+    if (timeout == 0) {
+        portENABLE_INTERRUPTS();
+        return ESP_ERR_TIMEOUT;
+    }
     
     // Read 40 bits of data
     for (int i = 0; i < 40; i++) {
@@ -62,7 +74,10 @@ static esp_err_t simple_dht_read(gpio_num_t pin, float *humidity, float *tempera
             esp_rom_delay_us(1);
             timeout--;
         }
-        if (timeout == 0) return ESP_ERR_TIMEOUT;
+        if (timeout == 0) {
+            portENABLE_INTERRUPTS();
+            return ESP_ERR_TIMEOUT;
+        }
         
         // Measure high pulse duration
         int high_time = 0;
@@ -79,10 +94,14 @@ static esp_err_t simple_dht_read(gpio_num_t pin, float *humidity, float *tempera
         }
     }
     
+    // Re-enable interrupts after critical timing section
+    portENABLE_INTERRUPTS();
+    
     // Verify checksum
     uint8_t checksum = data[0] + data[1] + data[2] + data[3];
     if (checksum != data[4]) {
-        ESP_LOGE(TAG, "Checksum failed: %d != %d", checksum, data[4]);
+        ESP_LOGD(TAG, "Checksum failed: %d != %d (data: %02X %02X %02X %02X %02X)", 
+                 checksum, data[4], data[0], data[1], data[2], data[3], data[4]);
         return ESP_ERR_INVALID_CRC;
     }
     
@@ -108,23 +127,60 @@ void dht_task(void *pvParameters)
     // Wait for sensor to stabilize after power-on
     vTaskDelay(pdMS_TO_TICKS(2000));
     
+    const int MAX_RETRIES = 3;
+    int consecutive_failures = 0;
+    
     while (1)
     {
         float humidity = 0, temperature = 0;
-        esp_err_t result = simple_dht_read(pin, &humidity, &temperature);
+        esp_err_t result = ESP_FAIL;
         
-        if (result == ESP_OK)
+        // Retry mechanism: try up to MAX_RETRIES times
+        for (int retry = 0; retry < MAX_RETRIES; retry++)
         {
-            dht_data_t sensor_data = {humidity, temperature};
+            result = simple_dht_read(pin, &humidity, &temperature);
             
-            if (dht_queue != NULL)
+            if (result == ESP_OK)
             {
-                xQueueSend(dht_queue, &sensor_data, portMAX_DELAY);
+                // Success! Reset failure counter
+                consecutive_failures = 0;
+                
+                dht_data_t sensor_data = {humidity, temperature};
+                
+                if (dht_queue != NULL)
+                {
+                    xQueueSend(dht_queue, &sensor_data, portMAX_DELAY);
+                }
+                break; // Exit retry loop on success
+            }
+            else
+            {
+                // Only log on first attempt to reduce spam
+                if (retry == 0)
+                {
+                    ESP_LOGW(TAG, "DHT read failed: %s, retrying...", esp_err_to_name(result));
+                }
+                
+                // Wait a bit before retrying (DHT needs time between attempts)
+                if (retry < MAX_RETRIES - 1)
+                {
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                }
             }
         }
-        else
+        
+        // If all retries failed
+        if (result != ESP_OK)
         {
-            ESP_LOGW(TAG, "DHT read failed: %s", esp_err_to_name(result));
+            consecutive_failures++;
+            ESP_LOGE(TAG, "DHT read failed after %d retries (consecutive failures: %d)", 
+                     MAX_RETRIES, consecutive_failures);
+            
+            // If too many consecutive failures, sensor might be disconnected
+            if (consecutive_failures >= 5)
+            {
+                ESP_LOGE(TAG, "WARNING: DHT sensor may be disconnected or faulty!");
+            }
         }
         
         // DHT sensors need at least 2 seconds between reads
