@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include "driver/gpio.h"
 #include "esp_err.h"
+#include "hal/gpio_types.h"  // IWYU pragma: keep
 
 typedef enum {
     LED_CONTROLLER_BACKEND_RMT,
