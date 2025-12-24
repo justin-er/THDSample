@@ -14,5 +14,7 @@
   ],
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
-  }
+},
+"idf.port": "/dev/tty.usbmodem101",
+"idf.flashType": "JTAG"
 }

@@ -330,17 +330,6 @@ void wifi_app_set_callback(wifi_connected_event_callback_t cb)
 }
 
 /**
- * Calls the callback function
- */
-void wifi_app_call_callback(void)
-{
-    if (wifi_connected_cb)
-    {
-        wifi_connected_cb();
-    }
-}
-
-/**
  * Gets the RSSI value of the WiFi connection
  * @return current RSSI level (0 if not connected)
  */
