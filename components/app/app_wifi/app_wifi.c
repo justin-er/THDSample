@@ -262,6 +262,34 @@ static void wifi_app_task(void *pvParameters)
 
             case WIFI_APP_MSG_STA_CONNECTED_GOT_IP:
                 ESP_LOGI(TAG, "Received: STA_CONNECTED_GOT_IP");
+                
+                // Update AP DHCP DNS to router's DNS (or 8.8.8.8) for internet access
+                // This allows phones connected to ESP32 AP to access internet
+                esp_netif_ip_info_t sta_ip_info;
+                esp_err_t ret = esp_netif_get_ip_info(esp_netif_sta, &sta_ip_info);
+                if (ret == ESP_OK) {
+                    // Stop AP DHCP
+                    esp_netif_dhcps_stop(esp_netif_ap);
+                    
+                    // Use router's gateway as DNS (most routers run DNS on gateway IP)
+                    // Fallback to 8.8.8.8 (Google DNS) if gateway is not available
+                    esp_netif_dns_info_t dns_info;
+                    if (sta_ip_info.gw.addr != 0) {
+                        dns_info.ip.u_addr.ip4 = sta_ip_info.gw;
+                        ESP_LOGI(TAG, "Setting AP DNS to router gateway: " IPSTR, IP2STR(&sta_ip_info.gw));
+                    } else {
+                        // Fallback to Google DNS
+                        inet_pton(AF_INET, "8.8.8.8", &dns_info.ip.u_addr.ip4);
+                        ESP_LOGI(TAG, "Setting AP DNS to 8.8.8.8 (router gateway not available)");
+                    }
+                    dns_info.ip.type = IPADDR_TYPE_V4;
+                    ESP_ERROR_CHECK(esp_netif_set_dns_info(esp_netif_ap, ESP_NETIF_DNS_MAIN, &dns_info));
+                    
+                    // Restart AP DHCP with new DNS
+                    esp_netif_dhcps_start(esp_netif_ap);
+                    ESP_LOGI(TAG, "AP DHCP DNS updated for internet access");
+                }
+                
                 // Call callback if set
                 if (wifi_connected_cb)
                 {
@@ -272,11 +300,22 @@ static void wifi_app_task(void *pvParameters)
                 break;
 
             case WIFI_APP_MSG_USER_REQUESTED_STA_DISCONNECT:
+            {
                 ESP_LOGI(TAG, "Received: USER_REQUESTED_STA_DISCONNECT");
                 g_retry_number = MAX_CONNECTION_RETRIES;
                 connection_status = WIFI_STATUS_DISCONNECTED;
                 ESP_ERROR_CHECK(esp_wifi_disconnect());
+                
+                // Restore AP DHCP DNS to ESP32 IP (captive portal mode)
+                esp_netif_dhcps_stop(esp_netif_ap);
+                esp_netif_dns_info_t dns_info_restore;
+                inet_pton(AF_INET, WIFI_AP_IP, &dns_info_restore.ip.u_addr.ip4);
+                dns_info_restore.ip.type = IPADDR_TYPE_V4;
+                ESP_ERROR_CHECK(esp_netif_set_dns_info(esp_netif_ap, ESP_NETIF_DNS_MAIN, &dns_info_restore));
+                esp_netif_dhcps_start(esp_netif_ap);
+                ESP_LOGI(TAG, "AP DHCP DNS restored to captive portal mode");
                 break;
+            }
 
             case WIFI_APP_MSG_LOAD_SAVED_CREDENTIALS:
                 ESP_LOGI(TAG, "Received: LOAD_SAVED_CREDENTIALS");
@@ -292,10 +331,21 @@ static void wifi_app_task(void *pvParameters)
                 break;
 
             case WIFI_APP_MSG_STA_DISCONNECTED:
+            {
                 ESP_LOGI(TAG, "Received: STA_DISCONNECTED");
                 // Stop SNTP client
                 sntp_client_stop();
+                
+                // Restore AP DHCP DNS to ESP32 IP (captive portal mode)
+                esp_netif_dhcps_stop(esp_netif_ap);
+                esp_netif_dns_info_t dns_info_restore;
+                inet_pton(AF_INET, WIFI_AP_IP, &dns_info_restore.ip.u_addr.ip4);
+                dns_info_restore.ip.type = IPADDR_TYPE_V4;
+                ESP_ERROR_CHECK(esp_netif_set_dns_info(esp_netif_ap, ESP_NETIF_DNS_MAIN, &dns_info_restore));
+                esp_netif_dhcps_start(esp_netif_ap);
+                ESP_LOGI(TAG, "AP DHCP DNS restored to captive portal mode");
                 break;
+            }
 
             default:
                 ESP_LOGW(TAG, "Unknown message ID: %d", msg.msgID);
