@@ -1,8 +1,8 @@
 #ifndef MAIN_WIFI_APP_H_
 #define MAIN_WIFI_APP_H_
 
-#include "esp_wifi_types.h"  // IWYU pragma: keep
-#include "freertos/FreeRTOS.h" // IWYU pragma: keep
+#include "freertos/FreeRTOS.h" // IWYU pragma: keep (must be before esp_wifi.h)
+#include "esp_wifi.h"  // IWYU pragma: keep
 
 // Forward declaration
 typedef struct esp_netif_obj esp_netif_t;
@@ -11,7 +11,7 @@ typedef struct esp_netif_obj esp_netif_t;
 typedef void (*wifi_connected_event_callback_t)(void);
 
 // WiFi application settings
-#define WIFI_AP_SSID "ESP32_AP" // AP name
+#define WIFI_AP_SSID "esp32-ap" // AP name
 #define WIFI_AP_PASSWORD "password" // AP password
 #define WIFI_AP_CHANNEL 1 // AP channel
 #define WIFI_AP_SSID_HIDDEN 0 // AP visibility
@@ -82,5 +82,63 @@ void wifi_app_set_callback(wifi_connected_event_callback_t cb);
  * @return current RSSI level.
  */
 int8_t wifi_app_get_rssi(void);
+
+/**
+ * WiFi connection status enum
+ */
+typedef enum {
+    WIFI_STATUS_DISCONNECTED = 0,
+    WIFI_STATUS_CONNECTING = 1,
+    WIFI_STATUS_FAILED = 2,
+    WIFI_STATUS_CONNECTED = 3
+} wifi_app_connection_status_e;
+
+/**
+ * WiFi connection info structure
+ */
+typedef struct {
+    char ssid[MAX_SSID_LENGTH + 1];
+    char ip[16];
+    char netmask[16];
+    char gateway[16];
+} wifi_app_connection_info_t;
+
+/**
+ * WiFi scan result structure
+ */
+typedef struct {
+    char ssid[MAX_SSID_LENGTH + 1];
+    int8_t rssi;
+    wifi_auth_mode_t auth_mode;
+} wifi_app_scan_result_t;
+
+/**
+ * Get WiFi connection status
+ * @return Connection status enum
+ */
+wifi_app_connection_status_e wifi_app_get_connection_status(void);
+
+/**
+ * Get WiFi connection information
+ * @param info Pointer to connection info structure
+ * @return ESP_OK on success, ESP_ERR_INVALID_STATE if not connected
+ */
+esp_err_t wifi_app_get_connection_info(wifi_app_connection_info_t *info);
+
+/**
+ * Scan for available WiFi networks
+ * @param results Pointer to receive array of scan results (caller must free)
+ * @param count Pointer to receive number of results
+ * @return ESP_OK on success
+ */
+esp_err_t wifi_app_scan_networks(wifi_app_scan_result_t **results, size_t *count);
+
+/**
+ * Set WiFi credentials for STA connection
+ * @param ssid SSID to connect to
+ * @param password Password for the network
+ * @return ESP_OK on success
+ */
+esp_err_t wifi_app_set_sta_credentials(const char *ssid, const char *password);
 
 #endif /* MAIN_WIFI_APP_H_ */

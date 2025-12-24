@@ -10,6 +10,9 @@
 #include "freertos/queue.h"
 #include "tasks.h"
 #include "app_nvs.h"
+#include "http_server.h"
+#include "dns_server.h"
+#include "sntp_client.h"
 
 static const char *TAG = "wifi_app";
 
@@ -29,6 +32,13 @@ static wifi_config_t wifi_config = {0};
 
 // Retry counter for STA connection
 static int g_retry_number = 0;
+
+// Connection status tracking
+static wifi_app_connection_status_e connection_status = WIFI_STATUS_DISCONNECTED;
+
+// STA credentials storage
+static char sta_ssid[MAX_SSID_LENGTH + 1] = {0};
+static char sta_password[MAX_PASSWORD_LENGTH + 1] = {0};
 
 /**
  * WiFi application event handler
@@ -61,10 +71,12 @@ static void wifi_app_event_handler(void *arg, esp_event_base_t event_base, int32
 
         case WIFI_EVENT_STA_START:
             ESP_LOGI(TAG, "Station mode started");
+            connection_status = WIFI_STATUS_CONNECTING;
             break;
 
         case WIFI_EVENT_STA_CONNECTED:
             ESP_LOGI(TAG, "Connected to AP");
+            connection_status = WIFI_STATUS_CONNECTING;  // Waiting for IP
             break;
 
         case WIFI_EVENT_STA_DISCONNECTED:
@@ -76,11 +88,13 @@ static void wifi_app_event_handler(void *arg, esp_event_base_t event_base, int32
             {
                 esp_wifi_connect();
                 g_retry_number++;
+                connection_status = WIFI_STATUS_CONNECTING;
                 ESP_LOGI(TAG, "Retrying connection... (%d/%d)", g_retry_number, MAX_CONNECTION_RETRIES);
             }
             else
             {
                 ESP_LOGI(TAG, "Failed to connect after %d retries", MAX_CONNECTION_RETRIES);
+                connection_status = WIFI_STATUS_FAILED;
                 wifi_app_send_message(WIFI_APP_MSG_STA_DISCONNECTED);
             }
             break;
@@ -99,6 +113,7 @@ static void wifi_app_event_handler(void *arg, esp_event_base_t event_base, int32
             ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
             ESP_LOGI(TAG, "Got IP address: " IPSTR, IP2STR(&event->ip_info.ip));
             g_retry_number = 0;
+            connection_status = WIFI_STATUS_CONNECTED;
             wifi_app_send_message(WIFI_APP_MSG_STA_CONNECTED_GOT_IP);
             break;
         }
@@ -173,6 +188,14 @@ static void wifi_app_soft_ap_config(void)
 
     ESP_ERROR_CHECK(esp_netif_set_ip_info(esp_netif_ap, &ap_ip_info));
 
+    // Configure DNS server (advertised via DHCP)
+    // This ensures all connected devices receive the DNS server IP (192.168.0.1)
+    // in their DHCP configuration, allowing them to resolve DNS queries properly
+    esp_netif_dns_info_t dns_info;
+    inet_pton(AF_INET, WIFI_AP_IP, &dns_info.ip.u_addr.ip4);
+    dns_info.ip.type = IPADDR_TYPE_V4;
+    ESP_ERROR_CHECK(esp_netif_set_dns_info(esp_netif_ap, ESP_NETIF_DNS_MAIN, &dns_info));
+
     // Start DHCP server
     esp_netif_dhcps_start(esp_netif_ap);
 
@@ -227,7 +250,9 @@ static void wifi_app_task(void *pvParameters)
             switch (msg.msgID)
             {
             case WIFI_APP_MSG_START_HTTP_SERVER:
-                ESP_LOGI(TAG, "Received: START_HTTP_SERVER (will be implemented in Phase 2)");
+                ESP_LOGI(TAG, "Received: START_HTTP_SERVER");
+                http_server_start();
+                dns_server_start();
                 break;
 
             case WIFI_APP_MSG_CONNECTING_FROM_HTTP_SERVER:
@@ -242,12 +267,14 @@ static void wifi_app_task(void *pvParameters)
                 {
                     wifi_connected_cb();
                 }
-                // TODO: Initialize SNTP in Phase 2
+                // Start SNTP client
+                sntp_client_start();
                 break;
 
             case WIFI_APP_MSG_USER_REQUESTED_STA_DISCONNECT:
                 ESP_LOGI(TAG, "Received: USER_REQUESTED_STA_DISCONNECT");
                 g_retry_number = MAX_CONNECTION_RETRIES;
+                connection_status = WIFI_STATUS_DISCONNECTED;
                 ESP_ERROR_CHECK(esp_wifi_disconnect());
                 break;
 
@@ -266,6 +293,8 @@ static void wifi_app_task(void *pvParameters)
 
             case WIFI_APP_MSG_STA_DISCONNECTED:
                 ESP_LOGI(TAG, "Received: STA_DISCONNECTED");
+                // Stop SNTP client
+                sntp_client_stop();
                 break;
 
             default:
@@ -344,4 +373,184 @@ int8_t wifi_app_get_rssi(void)
     }
     
     return 0;
+}
+
+/**
+ * Get WiFi connection status
+ */
+wifi_app_connection_status_e wifi_app_get_connection_status(void)
+{
+    return connection_status;
+}
+
+/**
+ * Get WiFi connection information
+ */
+esp_err_t wifi_app_get_connection_info(wifi_app_connection_info_t *info)
+{
+    if (info == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (connection_status != WIFI_STATUS_CONNECTED) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Get SSID
+    wifi_ap_record_t ap_info;
+    esp_err_t ret = esp_wifi_sta_get_ap_info(&ap_info);
+    if (ret == ESP_OK) {
+        memcpy(info->ssid, ap_info.ssid, sizeof(info->ssid));
+        info->ssid[MAX_SSID_LENGTH] = '\0';
+    } else {
+        info->ssid[0] = '\0';
+    }
+    
+    // Get IP info
+    esp_netif_ip_info_t ip_info;
+    ret = esp_netif_get_ip_info(esp_netif_sta, &ip_info);
+    if (ret == ESP_OK) {
+        snprintf(info->ip, sizeof(info->ip), IPSTR, IP2STR(&ip_info.ip));
+        snprintf(info->netmask, sizeof(info->netmask), IPSTR, IP2STR(&ip_info.netmask));
+        snprintf(info->gateway, sizeof(info->gateway), IPSTR, IP2STR(&ip_info.gw));
+    } else {
+        info->ip[0] = '\0';
+        info->netmask[0] = '\0';
+        info->gateway[0] = '\0';
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * Scan for available WiFi networks
+ */
+esp_err_t wifi_app_scan_networks(wifi_app_scan_result_t **results, size_t *count)
+{
+    if (results == NULL || count == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    ESP_LOGI(TAG, "Starting WiFi scan");
+    
+    // Start scan
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = {
+            .active = {
+                .min = 100,
+                .max = 300
+            }
+        }
+    };
+    
+    esp_err_t ret = esp_wifi_scan_start(&scan_config, true);  // Block until done
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi scan failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Get scan results
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    
+    if (ap_count == 0) {
+        ESP_LOGW(TAG, "No APs found");
+        *results = NULL;
+        *count = 0;
+        return ESP_OK;
+    }
+    
+    // Limit to 20 results
+    if (ap_count > 20) {
+        ap_count = 20;
+    }
+    
+    wifi_ap_record_t *ap_records = malloc(sizeof(wifi_ap_record_t) * ap_count);
+    if (ap_records == NULL) {
+        esp_wifi_scan_stop();
+        return ESP_ERR_NO_MEM;
+    }
+    
+    uint16_t actual_count = ap_count;
+    ret = esp_wifi_scan_get_ap_records(&actual_count, ap_records);
+    if (ret != ESP_OK) {
+        free(ap_records);
+        return ret;
+    }
+    
+    // Allocate results array
+    *results = malloc(sizeof(wifi_app_scan_result_t) * actual_count);
+    if (*results == NULL) {
+        free(ap_records);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Copy and sort by RSSI
+    for (int i = 0; i < actual_count; i++) {
+        memcpy((*results)[i].ssid, ap_records[i].ssid, MAX_SSID_LENGTH);
+        (*results)[i].ssid[MAX_SSID_LENGTH] = '\0';
+        (*results)[i].rssi = ap_records[i].rssi;
+        (*results)[i].auth_mode = ap_records[i].authmode;
+    }
+    
+    // Simple bubble sort by RSSI (strongest first)
+    for (int i = 0; i < actual_count - 1; i++) {
+        for (int j = 0; j < actual_count - i - 1; j++) {
+            if ((*results)[j].rssi < (*results)[j + 1].rssi) {
+                wifi_app_scan_result_t temp = (*results)[j];
+                (*results)[j] = (*results)[j + 1];
+                (*results)[j + 1] = temp;
+            }
+        }
+    }
+    
+    *count = actual_count;
+    free(ap_records);
+    
+    ESP_LOGI(TAG, "WiFi scan complete, found %d networks", actual_count);
+    return ESP_OK;
+}
+
+/**
+ * Set WiFi credentials for STA connection
+ */
+esp_err_t wifi_app_set_sta_credentials(const char *ssid, const char *password)
+{
+    if (ssid == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Store credentials
+    strncpy(sta_ssid, ssid, MAX_SSID_LENGTH);
+    sta_ssid[MAX_SSID_LENGTH] = '\0';
+    
+    if (password != NULL) {
+        strncpy(sta_password, password, MAX_PASSWORD_LENGTH);
+        sta_password[MAX_PASSWORD_LENGTH] = '\0';
+    } else {
+        sta_password[0] = '\0';
+    }
+    
+    // Update wifi_config
+    memset(&wifi_config, 0, sizeof(wifi_config));
+    strncpy((char *)wifi_config.sta.ssid, sta_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, sta_password, sizeof(wifi_config.sta.password));
+    
+    // Set WiFi config
+    esp_err_t ret = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set WiFi config: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // Save to NVS
+    app_nvs_save_sta_creds();
+    
+    ESP_LOGI(TAG, "WiFi credentials set: SSID=%s", sta_ssid);
+    return ESP_OK;
 }

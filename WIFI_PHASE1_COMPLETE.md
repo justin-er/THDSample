@@ -115,3 +115,15 @@ When you're ready for Phase 2, we'll implement:
 5. Connection status monitoring
 
 The current implementation is fully functional for Phase 1 and ready to be extended!
+
+### Phase 2 detaisl
+The HTTP Server will support the web page files (.html, .css and .js).
+• It will also support OTA (Over the Air) Firmware Updates.
+• Additionally, support for DHT22 Temperature and Humidity Sensor readings for
+display on the web page will be added.
+• The HTTP server will be able to respond to Connection and Disconnection buttons
+on the web page e.g., by entering SSID & Password into text fields and clicking
+connect and disconnect for removing a connection.
+• The web server will also handle sending connection information (SSID and IP,
+Gateway, Netmask) about the active connection to the web page.
+• We will also send the ESP32’s assigned SSID to the web page.

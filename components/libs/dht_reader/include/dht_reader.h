@@ -1,6 +1,7 @@
 #ifndef DHT_READER_H
 #define DHT_READER_H
 
+#include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <esp_err.h>
 
