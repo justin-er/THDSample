@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS "http_server.c"
     INCLUDE_DIRS "include"
-    REQUIRES app_coordinator app_wifi esp_http_server cjson
+    REQUIRES app_coordinator app_wifi esp_http_server cjson ota_update
     EMBED_FILES
         "${CMAKE_SOURCE_DIR}/main/webpage/index.html"
         "${CMAKE_SOURCE_DIR}/main/webpage/app.css"

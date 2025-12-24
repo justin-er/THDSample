@@ -51,26 +51,37 @@ function getFileInfo()
 
 /**
  * Handles the firmware update.
+ * Sends raw binary data instead of FormData to avoid multipart parsing issues.
  */
 function updateFirmware() 
 {
-    // Form Data
-    var formData = new FormData();
     var fileSelect = document.getElementById("selected_file");
     
     if (fileSelect.files && fileSelect.files.length == 1) 
 	{
         var file = fileSelect.files[0];
-        formData.set("file", file, file.name);
         document.getElementById("ota_update_status").innerHTML = "Uploading " + file.name + ", Firmware Update in Progress...";
 
-        // Http Request
-        var request = new XMLHttpRequest();
-
-        request.upload.addEventListener("progress", updateProgress);
-        request.open('POST', "/OTAupdate");
-        request.responseType = "blob";
-        request.send(formData);
+        // Read file as ArrayBuffer and send as raw binary
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var arrayBuffer = e.target.result;
+            
+            // Http Request - send raw binary
+            var request = new XMLHttpRequest();
+            
+            request.upload.addEventListener("progress", updateProgress);
+            request.open('POST', "/OTAupdate");
+            request.setRequestHeader("Content-Type", "application/octet-stream");
+            request.responseType = "blob";
+            request.send(arrayBuffer);
+        };
+        
+        reader.onerror = function() {
+            document.getElementById("ota_update_status").innerHTML = "!!! File Read Error !!!";
+        };
+        
+        reader.readAsArrayBuffer(file);
     } 
 	else 
 	{

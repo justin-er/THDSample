@@ -3,6 +3,9 @@
 #include "esp_ota_ops.h"
 #include "esp_app_format.h"
 #include "esp_partition.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 
 static const char *TAG = "ota_update";
@@ -160,8 +163,15 @@ esp_err_t ota_update_end(void)
     
     ESP_LOGI(TAG, "OTA update completed successfully");
     ESP_LOGI(TAG, "Total bytes written: %zu", bytes_written);
-    ESP_LOGI(TAG, "Reboot to apply new firmware");
+    ESP_LOGI(TAG, "Rebooting to apply new firmware in 2 seconds...");
     
+    // Give delay to allow HTTP response to be fully sent before reboot
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
+    // Reboot to apply new firmware
+    esp_restart();
+    
+    // Should never reach here, but return OK just in case
     return ESP_OK;
 }
 

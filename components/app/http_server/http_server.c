@@ -2,6 +2,7 @@
 #include "app_coordinator.h"
 #include "app_wifi.h"
 #include "sntp_client.h"
+#include "ota_update.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "cJSON.h"
@@ -425,14 +426,243 @@ static esp_err_t config_restore_handler(httpd_req_t *req)
 
 /**
  * OTA update handler - receives firmware binary
+ * Handles multipart/form-data uploads and streams to OTA partition
  */
 static esp_err_t ota_update_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "OTA update request, size: %d bytes", req->content_len);
     
-    // This will be fully implemented when ota_update component is created
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA not yet implemented");
-    return ESP_FAIL;
+    if (req->content_len == 0) {
+        ESP_LOGE(TAG, "OTA update: No content");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No firmware data");
+        return ESP_FAIL;
+    }
+    
+    // Check content type - handle both multipart/form-data and raw binary
+    size_t content_type_len = httpd_req_get_hdr_value_len(req, "Content-Type");
+    bool is_multipart = false;
+    char boundary[128] = {0};
+    
+    if (content_type_len > 0) {
+        char content_type[256];
+        if (httpd_req_get_hdr_value_str(req, "Content-Type", content_type, sizeof(content_type)) == ESP_OK) {
+            if (strstr(content_type, "multipart/form-data") != NULL) {
+                is_multipart = true;
+                // Extract boundary string
+                char *boundary_start = strstr(content_type, "boundary=");
+                if (boundary_start != NULL) {
+                    boundary_start += 9; // Skip "boundary="
+                    char *boundary_end = strchr(boundary_start, ';');
+                    if (boundary_end == NULL) {
+                        boundary_end = strchr(boundary_start, '\0');
+                    }
+                    int boundary_len = boundary_end - boundary_start;
+                    if (boundary_len > 0 && boundary_len < sizeof(boundary)) {
+                        strncpy(boundary, boundary_start, boundary_len);
+                        boundary[boundary_len] = '\0';
+                        // Remove quotes if present
+                        if (boundary[0] == '"' && boundary[boundary_len-1] == '"') {
+                            memmove(boundary, boundary + 1, boundary_len - 2);
+                            boundary[boundary_len - 2] = '\0';
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Buffer for reading data - use larger buffer for multipart parsing
+    char *buf = malloc(2048);
+    if (buf == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate buffer");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+    
+    int remaining = req->content_len;
+    int total_received = 0;
+    bool data_started = false;
+    bool ota_started = false;
+    size_t firmware_size = 0;
+    
+    // For multipart, we need to parse the structure:
+    // --boundary\r\n
+    // Content-Disposition: form-data; name="file"; filename="..."\r\n
+    // Content-Type: application/octet-stream\r\n
+    // \r\n
+    // [BINARY DATA]
+    // \r\n--boundary--\r\n
+    
+    // Read initial data to find where binary starts
+    int initial_read = httpd_req_recv(req, buf, (remaining < 2048) ? remaining : 2048);
+    if (initial_read <= 0) {
+        ESP_LOGE(TAG, "Failed to receive initial data");
+        free(buf);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive data");
+        return ESP_FAIL;
+    }
+    
+    char *data_start = NULL;
+    int data_offset = 0;
+    
+    if (is_multipart) {
+        // Find the end of headers (\r\n\r\n)
+        data_start = strstr(buf, "\r\n\r\n");
+        if (data_start != NULL) {
+            data_start += 4; // Skip \r\n\r\n
+            data_offset = data_start - buf;
+            data_started = true;
+            
+            // Estimate firmware size (total - headers - boundary markers)
+            // This is approximate, we'll adjust as we read
+            firmware_size = req->content_len - data_offset;
+            // Subtract approximate size of closing boundary (boundary + 6 bytes for --\r\n\r\n)
+            if (strlen(boundary) > 0) {
+                firmware_size -= (strlen(boundary) + 6);
+            }
+        } else {
+            ESP_LOGE(TAG, "Could not find data start in multipart");
+            free(buf);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid multipart format");
+            return ESP_FAIL;
+        }
+    } else {
+        // Raw binary - use all data
+        data_start = buf;
+        data_offset = 0;
+        firmware_size = req->content_len;
+        data_started = true;
+    }
+    
+    // Start OTA update with estimated size
+    if (data_started && firmware_size > 0) {
+        esp_err_t ret = ota_update_begin(firmware_size);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to begin OTA update: %s", esp_err_to_name(ret));
+            free(buf);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA begin failed");
+            return ESP_FAIL;
+        }
+        ota_started = true;
+    }
+    
+    // Write the first chunk of data
+    if (data_started && ota_started) {
+        int first_chunk_len = initial_read - data_offset;
+        if (first_chunk_len > 0) {
+            esp_err_t ret = ota_update_write((const uint8_t *)data_start, first_chunk_len);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "OTA write failed: %s", esp_err_to_name(ret));
+                free(buf);
+                ota_update_abort();
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA write failed");
+                return ESP_FAIL;
+            }
+            total_received += first_chunk_len;
+        }
+    }
+    
+    remaining -= initial_read;
+    
+    // Read and write remaining data
+    while (remaining > 0 && ota_started) {
+        int recv_len = httpd_req_recv(req, buf, (remaining < 2048) ? remaining : 2048);
+        if (recv_len <= 0) {
+            if (recv_len == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            ESP_LOGE(TAG, "Failed to receive data: %d", recv_len);
+            free(buf);
+            ota_update_abort();
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive data");
+            return ESP_FAIL;
+        }
+        
+        // For multipart, check if we've reached the closing boundary
+        if (is_multipart && recv_len >= 4) {
+            // Check for \r\n--boundary-- pattern
+            if (buf[0] == '\r' && buf[1] == '\n' && buf[2] == '-' && buf[3] == '-') {
+                // Check if this matches our boundary
+                if (strlen(boundary) > 0) {
+                    char boundary_marker[256];
+                    snprintf(boundary_marker, sizeof(boundary_marker), "\r\n--%s--", boundary);
+                    if (strncmp(buf, boundary_marker, strlen(boundary_marker)) == 0) {
+                        // Reached closing boundary, stop reading
+                        ESP_LOGI(TAG, "Reached multipart closing boundary");
+                        break;
+                    }
+                }
+                // Also check for just \r\n-- (simpler check)
+                if (recv_len >= 4 && buf[2] == '-' && buf[3] == '-') {
+                    // Likely boundary, calculate how much data to write
+                    // Find where boundary starts in this buffer
+                    int write_len = 0;
+                    for (int i = 0; i < recv_len - 1; i++) {
+                        if (buf[i] == '\r' && buf[i+1] == '\n' && 
+                            i + 2 < recv_len && buf[i+2] == '-' && buf[i+3] == '-') {
+                            write_len = i;
+                            break;
+                        }
+                    }
+                    if (write_len > 0) {
+                        // Write data before boundary
+                        esp_err_t ret = ota_update_write((const uint8_t *)buf, write_len);
+                        if (ret != ESP_OK) {
+                            ESP_LOGE(TAG, "OTA write failed: %s", esp_err_to_name(ret));
+                            free(buf);
+                            ota_update_abort();
+                            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA write failed");
+                            return ESP_FAIL;
+                        }
+                        total_received += write_len;
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Write the data
+        esp_err_t ret = ota_update_write((const uint8_t *)buf, recv_len);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "OTA write failed: %s", esp_err_to_name(ret));
+            free(buf);
+            ota_update_abort();
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA write failed");
+            return ESP_FAIL;
+        }
+        
+        total_received += recv_len;
+        remaining -= recv_len;
+        
+        ESP_LOGD(TAG, "OTA progress: %d bytes (%.1f%%)", 
+                 total_received, 
+                 (firmware_size > 0) ? (total_received * 100.0) / firmware_size : 0);
+    }
+    
+    free(buf);
+    
+    if (!ota_started) {
+        ESP_LOGE(TAG, "OTA update was not started");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA not started");
+        return ESP_FAIL;
+    }
+    
+    // Send success response FIRST (before reboot)
+    ESP_LOGI(TAG, "OTA update successful: %d bytes written", total_received);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+    
+    // Finalize OTA update (this will set boot partition and reboot after delay)
+    // Response is already sent, so reboot can happen
+    esp_err_t ret = ota_update_end();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to end OTA update: %s", esp_err_to_name(ret));
+        // Response already sent, can't send error - just log it
+        return ESP_FAIL;
+    }
+    
+    // Note: Device will reboot automatically in ota_update_end() after 500ms delay
+    return ESP_OK;
 }
 
 esp_err_t http_server_start(void)
