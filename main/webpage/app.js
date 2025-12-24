@@ -9,11 +9,27 @@ var wifiConnectInterval = null;
  * Initialize functions here.
  */
 $(document).ready(function(){
+	// Load critical data immediately
 	getSSID();
-	getUpdateStatus();
-	startDHTSensorInterval();
-	startLocalTimeInterval();
-	getConnectInfo();
+	
+	// Stagger other requests to avoid connection queuing
+	// (max_open_sockets = 7, server uses 3 internally = 4 available)
+	setTimeout(function() {
+		getUpdateStatus();
+	}, 100);
+	
+	setTimeout(function() {
+		startDHTSensorInterval();  // This calls getDHTSensorValues() immediately
+	}, 200);
+	
+	setTimeout(function() {
+		startLocalTimeInterval();  // This calls getLocalTime() immediately
+	}, 300);
+	
+	setTimeout(function() {
+		getConnectInfo();
+	}, 400);
+	
 	$("#connect_wifi").on("click", function(){
 		checkCredentials();
 	}); 
@@ -79,34 +95,36 @@ function updateProgress(oEvent)
 
 /**
  * Posts the firmware udpate status.
+ * Changed to asynchronous to prevent blocking page load.
  */
 function getUpdateStatus() 
 {
-    var xhr = new XMLHttpRequest();
-    var requestURL = "/OTAstatus";
-    xhr.open('POST', requestURL, false);
-    xhr.send('ota_update_status');
+    $.ajax({
+        url: '/OTAstatus',
+        method: 'POST',
+        data: 'ota_update_status',
+        dataType: 'json',
+        success: function(response) {
+            document.getElementById("latest_firmware").innerHTML = response.compile_date + " - " + response.compile_time
 
-    if (xhr.readyState == 4 && xhr.status == 200) 
-	{		
-        var response = JSON.parse(xhr.responseText);
-						
-	 	document.getElementById("latest_firmware").innerHTML = response.compile_date + " - " + response.compile_time
-
-		// If flashing was complete it will return a 1, else -1
-		// A return of 0 is just for information on the Latest Firmware request
-        if (response.ota_update_status == 1) 
-		{
-    		// Set the countdown timer time
-            seconds = 10;
-            // Start the countdown timer
-            otaRebootTimer();
-        } 
-        else if (response.ota_update_status == -1)
-		{
-            document.getElementById("ota_update_status").innerHTML = "!!! Upload Error !!!";
+            // If flashing was complete it will return a 1, else -1
+            // A return of 0 is just for information on the Latest Firmware request
+            if (response.ota_update_status == 1) 
+            {
+                // Set the countdown timer time
+                seconds = 10;
+                // Start the countdown timer
+                otaRebootTimer();
+            } 
+            else if (response.ota_update_status == -1)
+            {
+                document.getElementById("ota_update_status").innerHTML = "!!! Upload Error !!!";
+            }
+        },
+        error: function() {
+            // Silently fail - OTA status is not critical for page load
         }
-    }
+    });
 }
 
 /**
@@ -140,9 +158,13 @@ function getDHTSensorValues()
 
 /**
  * Sets the interval for getting the updated DHT22 sensor values.
+ * Also fetches sensor data immediately on page load.
  */
 function startDHTSensorInterval()
 {
+	// Fetch sensor data immediately
+	getDHTSensorValues();
+	// Then set up interval for updates every 5 seconds
 	setInterval(getDHTSensorValues, 5000);    
 }
 
@@ -160,32 +182,34 @@ function stopWifiConnectStatusInterval()
 
 /**
  * Gets the WiFi connection status.
+ * Changed to asynchronous to prevent blocking.
  */
 function getWifiConnectStatus()
 {
-	var xhr = new XMLHttpRequest();
-	var requestURL = "/wifiConnectStatus";
-	xhr.open('POST', requestURL, false);
-	xhr.send('wifi_connect_status');
-	
-	if (xhr.readyState == 4 && xhr.status == 200)
-	{
-		var response = JSON.parse(xhr.responseText);
-		
-		document.getElementById("wifi_connect_status").innerHTML = "Connecting...";
-		
-		if (response.wifi_connect_status == 2)
-		{
-			document.getElementById("wifi_connect_status").innerHTML = "<h4 class='rd'>Failed to Connect. Please check your AP credentials and compatibility</h4>";
-			stopWifiConnectStatusInterval();
+	$.ajax({
+		url: '/wifiConnectStatus',
+		method: 'POST',
+		data: 'wifi_connect_status',
+		dataType: 'json',
+		success: function(response) {
+			document.getElementById("wifi_connect_status").innerHTML = "Connecting...";
+			
+			if (response.wifi_connect_status == 2)
+			{
+				document.getElementById("wifi_connect_status").innerHTML = "<h4 class='rd'>Failed to Connect. Please check your AP credentials and compatibility</h4>";
+				stopWifiConnectStatusInterval();
+			}
+			else if (response.wifi_connect_status == 3)
+			{
+				document.getElementById("wifi_connect_status").innerHTML = "<h4 class='gr'>Connection Success!</h4>";
+				stopWifiConnectStatusInterval();
+				getConnectInfo();
+			}
+		},
+		error: function() {
+			// Silently fail - connection status check will retry on next interval
 		}
-		else if (response.wifi_connect_status == 3)
-		{
-			document.getElementById("wifi_connect_status").innerHTML = "<h4 class='gr'>Connection Success!</h4>";
-			stopWifiConnectStatusInterval();
-			getConnectInfo();
-		}
-	}
+	});
 }
 
 /**
@@ -307,9 +331,13 @@ function disconnectWifi()
 
 /**
  * Sets the interval for displaying local time.
+ * Also fetches time immediately on page load.
  */
 function startLocalTimeInterval()
 {
+	// Fetch time immediately
+	getLocalTime();
+	// Then set up interval for updates every 10 seconds
 	setInterval(getLocalTime, 10000);
 }
 
