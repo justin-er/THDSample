@@ -13,5 +13,6 @@
 "idf.flashType": "JTAG",
 "cmake.configureOnOpen": false,
 "cmake.configureOnEdit": false,
-"cmake.automaticReconfigure": false
+"cmake.automaticReconfigure": false,
+"idf.showOnboardingOnInit": false
 }
