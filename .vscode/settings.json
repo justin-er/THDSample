@@ -1,11 +1,5 @@
 {
-  "C_Cpp.intelliSenseEngine": "disabled",
-  "clangd.path": "${env:HOME}/tools/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
-  "clangd.arguments": [
-    "--background-index",
-    "--query-driver=${env:HOME}/tools/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc",
-    "--compile-commands-dir=${workspaceFolder}/build"
-  ],
+"C_Cpp.intelliSenseEngine": "Tag Parser",
   "idf.pythonInstallPath": "/opt/homebrew/Cellar/python@3.11/3.11.14_1/Frameworks/Python.framework/Versions/3.11/bin/python3.11",
   "idf.espIdfPath": "${env:HOME}/esp/v6.0/esp-idf",
   "idf.toolsPath": "${env:HOME}/tools",
@@ -16,5 +10,8 @@
     "IDF_TARGET": "esp32s3"
 },
 "idf.port": "/dev/tty.usbmodem101",
-"idf.flashType": "JTAG"
+"idf.flashType": "JTAG",
+"cmake.configureOnOpen": false,
+"cmake.configureOnEdit": false,
+"cmake.automaticReconfigure": false
 }
